@@ -1,0 +1,48 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct type_ConstantBuffer_ShaderUniforms
+{
+    float4x4 objToViewTransform;
+    float4x4 viewToClipTransform;
+    float4 ambientLightIntensity;
+    float4 viewSpacePointLightPosition;
+    float4 pointLightIntensity;
+    float4 viewSpaceDirectionalLightDirection;
+    float4 directionalLightIntensity;
+    float4 diffuseReflectance;
+    float4 specularCoefficient;
+    float shininess;
+};
+
+struct VSMain_out
+{
+    float4 out_var_ATTR0 [[user(locn0)]];
+    float4 out_var_ATTR1 [[user(locn1)]];
+    float4 gl_Position [[position]];
+};
+
+struct VSMain_in
+{
+    float3 in_var_SV_Position [[attribute(0)]];
+    float3 in_var_ATTR0 [[attribute(1)]];
+};
+
+vertex VSMain_out VSMain(VSMain_in in [[stage_in]], constant type_ConstantBuffer_ShaderUniforms& shaderUniforms [[buffer(0)]])
+{
+    VSMain_out out = {};
+    float4 _35 = shaderUniforms.objToViewTransform * float4(in.in_var_SV_Position, 1.0);
+    float4 _44 = shaderUniforms.viewToClipTransform * _35;
+    _44.y = _44.y * (-1.0);
+    out.gl_Position = _44;
+    out.out_var_ATTR0 = fast::normalize(shaderUniforms.objToViewTransform * float4(in.in_var_ATTR0, 0.0));
+    out.out_var_ATTR1 = _35;
+    return out;
+}
+
+/**NGF_NATIVE_BINDING_MAP
+(0 0) : 0
+(-1 -1) : -1
+**/

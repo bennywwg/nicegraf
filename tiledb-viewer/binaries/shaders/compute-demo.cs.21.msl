@@ -1,0 +1,48 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+kernel void CSMain(texture2d<float, access::write> outputImage [[texture(0)]], uint3 gl_GlobalInvocationID [[thread_position_in_grid]])
+{
+    float2 _56 = (float2(float(gl_GlobalInvocationID.x) * 0.001953125, float(gl_GlobalInvocationID.y) * 0.001953125) * 2.0) + float2(-1.60000002384185791015625, -1.0);
+    float2 _58;
+    int _61_copy;
+    _58 = float2(0.0);
+    float2 _59;
+    int _77;
+    bool _78;
+    int _61 = 0;
+    int _63 = 0;
+    for (;;)
+    {
+        if (_61 < 50)
+        {
+            _59 = (float2x2(_58, float2(-_58.y, _58.x)) * _58) + _56;
+            if (length(_59) > 2.0)
+            {
+                _77 = _61;
+                _78 = true;
+                break;
+            }
+            _58 = _59;
+            _61_copy = _61;
+            _61++;
+            _63 = _61_copy;
+            continue;
+        }
+        else
+        {
+            _77 = _63;
+            _78 = false;
+            break;
+        }
+    }
+    outputImage.write(select(float4(0.0, 0.0, 0.0, 1.0), float4(fma(float3(0.20000000298023223876953125, 0.100000001490116119384765625, 0.0), cos(((float3(1.0) * (float(_77) * 0.0199999995529651641845703125)) + float3(0.300000011920928955078125, 0.5, 0.20000000298023223876953125)) * 6.28318023681640625), float3(0.300000011920928955078125, 0.20000000298023223876953125, 0.4000000059604644775390625)), 1.0), bool4(_78)), uint2(gl_GlobalInvocationID.xy));
+}
+
+/**NGF_NATIVE_BINDING_MAP
+(0 0) : 0
+(-1 -1) : -1
+**/
+/**NGF_THREADGROUP_SIZE 4 4 1 */

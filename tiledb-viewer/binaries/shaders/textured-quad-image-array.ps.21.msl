@@ -1,0 +1,35 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct type_ConstantBuffer_ShaderUniforms
+{
+    float4x4 transformMatrix;
+    float imageArrayIdx;
+};
+
+struct PSMain_out
+{
+    float4 out_var_SV_Target [[color(0)]];
+};
+
+struct PSMain_in
+{
+    float2 in_var_NGF_UV [[user(locn0)]];
+};
+
+fragment PSMain_out PSMain(PSMain_in in [[stage_in]], constant type_ConstantBuffer_ShaderUniforms& shaderUniforms [[buffer(0)]], texture2d_array<float> textureImage [[texture(0)]], sampler imageSampler [[sampler(0)]])
+{
+    PSMain_out out = {};
+    float3 _32 = float3(in.in_var_NGF_UV, shaderUniforms.imageArrayIdx);
+    out.out_var_SV_Target = textureImage.sample(imageSampler, _32.xy, uint(rint(_32.z)));
+    return out;
+}
+
+/**NGF_NATIVE_BINDING_MAP
+(0 0) : 0
+(0 1) : 0
+(1 0) : 0
+(-1 -1) : -1
+**/

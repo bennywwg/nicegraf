@@ -1,0 +1,77 @@
+#pragma clang diagnostic ignored "-Wmissing-prototypes"
+#pragma clang diagnostic ignored "-Wmissing-braces"
+
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+template<typename T, size_t Num>
+struct spvUnsafeArray
+{
+    T elements[Num ? Num : 1];
+    
+    thread T& operator [] (size_t pos) thread
+    {
+        return elements[pos];
+    }
+    constexpr const thread T& operator [] (size_t pos) const thread
+    {
+        return elements[pos];
+    }
+    
+    device T& operator [] (size_t pos) device
+    {
+        return elements[pos];
+    }
+    constexpr const device T& operator [] (size_t pos) const device
+    {
+        return elements[pos];
+    }
+    
+    constexpr const constant T& operator [] (size_t pos) const constant
+    {
+        return elements[pos];
+    }
+    
+    threadgroup T& operator [] (size_t pos) threadgroup
+    {
+        return elements[pos];
+    }
+    constexpr const threadgroup T& operator [] (size_t pos) const threadgroup
+    {
+        return elements[pos];
+    }
+};
+
+struct type_ConstantBuffer_VolumeRendererUniforms
+{
+    float4x4 transformMatrix;
+    float aspectRatio;
+};
+
+constant spvUnsafeArray<float2, 6> _45 = spvUnsafeArray<float2, 6>({ float2(1.0, -1.0), float2(-1.0), float2(1.0), float2(1.0), float2(-1.0), float2(-1.0, 1.0) });
+
+struct VSMain_out
+{
+    float3 out_var_TexCoord [[user(locn0)]];
+    float4 gl_Position [[position]];
+};
+
+vertex VSMain_out VSMain(constant type_ConstantBuffer_VolumeRendererUniforms& shaderUniforms [[buffer(0)]], texture3d<float> volumeImage [[texture(0)]], uint gl_VertexIndex [[vertex_id]], uint gl_InstanceIndex [[instance_id]])
+{
+    VSMain_out out = {};
+    uint _51 = gl_VertexIndex % 6u;
+    float4 _74 = shaderUniforms.transformMatrix * float4(float3(_45[_51], fma(2.0, float(gl_InstanceIndex) / float(uint3(volumeImage.get_width(), volumeImage.get_height(), volumeImage.get_depth()).z), -1.0)) * float3(1.0, -1.0, 1.0), 1.0);
+    float2 _77 = (_74.xy * 0.5) + float2(0.5);
+    out.gl_Position = float4(_45[_51].x, _45[_51].y * shaderUniforms.aspectRatio, 0.0, 1.0);
+    out.out_var_TexCoord = float3(_77.x, _77.y, _74.z);
+    return out;
+}
+
+/**NGF_NATIVE_BINDING_MAP
+(0 0) : 0
+(0 1) : 0
+(1 0) : 0
+(-1 -1) : -1
+**/

@@ -1,0 +1,34 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct type_ConstantBuffer_ShaderUniforms
+{
+    float4x4 cameraTransform;
+    float aspectRatio;
+};
+
+struct PSMain_out
+{
+    float4 out_var_SV_Target [[color(0)]];
+};
+
+struct PSMain_in
+{
+    float4 in_var_NGF_CLIP_SPACE_POSITION [[user(locn0)]];
+};
+
+fragment PSMain_out PSMain(PSMain_in in [[stage_in]], constant type_ConstantBuffer_ShaderUniforms& shaderUniforms [[buffer(0)]], texturecube<float> cubemapImage [[texture(0)]], sampler imageSampler [[sampler(0)]])
+{
+    PSMain_out out = {};
+    out.out_var_SV_Target = cubemapImage.sample(imageSampler, (-(shaderUniforms.cameraTransform * float4(in.in_var_NGF_CLIP_SPACE_POSITION.x * shaderUniforms.aspectRatio, in.in_var_NGF_CLIP_SPACE_POSITION.y, 1.0, 0.0)).xyz));
+    return out;
+}
+
+/**NGF_NATIVE_BINDING_MAP
+(0 0) : 0
+(0 1) : 0
+(0 2) : 0
+(-1 -1) : -1
+**/

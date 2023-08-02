@@ -1,0 +1,25 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct PSMain_out
+{
+    float4 out_var_SV_TARGET [[color(0)]];
+};
+
+struct PSMain_in
+{
+    float4 in_var_NGF_COLOR [[user(locn0)]];
+};
+
+fragment PSMain_out PSMain(PSMain_in in [[stage_in]])
+{
+    PSMain_out out = {};
+    out.out_var_SV_TARGET = in.in_var_NGF_COLOR;
+    return out;
+}
+
+/**NGF_NATIVE_BINDING_MAP
+(-1 -1) : -1
+**/

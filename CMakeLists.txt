@@ -63,16 +63,13 @@ if (APPLE)
   find_library(APPLE_METAL Metal)
   find_library(APPLE_COCOA Cocoa)
   find_library(APPLE_QUARTZ Quartz)
+  #XCODE_ATTRIBUTEs
+  set(CMAKE_XCODE_ATTRIBUTE_SIGNING_ALLOWED "YES")
+  set(CMAKE_XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic")
+
 endif()
 
 if (APPLE AND NOT (NGF_USE_MVK STREQUAL "yes"))
-  # Nicegraf with native Metal backend.	
-  nmk_static_library(NAME nicegraf-mtl	
-                     SRCS ${CMAKE_CURRENT_LIST_DIR}/include/nicegraf.h	
-                          ${CMAKE_CURRENT_LIST_DIR}/source/ngf-mtl/impl.mm	
-                     DEPS ${NICEGRAF_COMMON_DEPS} ${APPLE_METAL} ${APPLE_COCOA} ${APPLE_QUARTZ}	
-                     COPTS "-fobjc-arc")	
-
   nmk_static_library(NAME nicegraf-mtl-cpp
                      SRCS ${CMAKE_CURRENT_LIST_DIR}/include/nicegraf.h
                           ${CMAKE_CURRENT_LIST_DIR}/source/ngf-mtl/impl.cpp
@@ -122,173 +119,149 @@ else()
              DEPS nicegraf-vk-for-tests "$<IF:$<NOT:$<BOOL:${WIN32}>>,dl,>")
 endif()
 
-# Build tests only if explicitly requested.
-if (NGF_BUILD_TESTS STREQUAL "yes")
-    nmk_binary(NAME internal-utils-tests
-           SRCS ${CMAKE_CURRENT_LIST_DIR}/tests/internal-utils-tests.c
-           SRCS ${CMAKE_CURRENT_LIST_DIR}/tests/test-suite-runner.c
-                    DEPS nicegraf-internal "$<IF:$<NOT:$<BOOL:${WIN32}>>,pthread,>")
+
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/deps/glfw)
+
+# Ensure we have the required dependencies are available.
+if (TARGET glfw)
+    set_target_properties(glfw PROPERTIES FOLDER "tiledb-viewer")
+else()
+    message(FATAL_ERROR "Dependencies required for building tiledb-viewer not found. Make sure to run `git submodule update` from the repo root.")
 endif()
 
-# Build samples only if explicitly requested.
-if (NGF_BUILD_SAMPLES STREQUAL "yes")
-    add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/samples/deps/glfw)
-
-    # Ensure we have the required dependencies are available.
-    if (TARGET glfw)
-        set_target_properties(glfw PROPERTIES FOLDER "samples")
+# Determine the backend to build the samples with based on the platform, and
+# any platform-specific source files.
+set(NGF_PLATFORM_SOURCE "")
+if (WIN32)
+    set(NICEGRAF_SHADERC_PLATFORM win)
+    set(TILEDB_VIEWER_BACKEND nicegraf-vk)
+elseif(APPLE)
+    set(NICEGRAF_SHADERC_PLATFORM macos)
+    if (NGF_USE_MVK STREQUAL "yes")
+      set(TILEDB_VIEWER_BACKEND nicegraf-vk)
     else()
-        message(FATAL_ERROR "Dependencies required for building samples not found. Make sure to run `git submodule update` from the repo root.")
+      set(TILEDB_VIEWER_BACKEND nicegraf-mtl-cpp)
     endif()
-    
-    # Determine the backend to build the samples with based on the platform, and
-    # any platform-specific source files.
-    set(NGF_PLATFORM_SOURCE "")
-    if (WIN32)
-        set(NICEGRAF_SHADERC_PLATFORM win)
-        set(NGF_SAMPLES_BACKEND nicegraf-vk)
-    elseif(APPLE)
-        set(NICEGRAF_SHADERC_PLATFORM macos)
-        if (NGF_USE_MVK STREQUAL "yes")
-          set(NGF_SAMPLES_BACKEND nicegraf-vk)
-        else()
-          set(NGF_SAMPLES_BACKEND nicegraf-mtl)
-        endif()
-        set(NGF_PLATFORM_SOURCE ${NGF_PLATFORM_SOURCE}
-                                ${CMAKE_CURRENT_LIST_DIR}/samples/common/platform/macos/main.mm
-                                ${CMAKE_CURRENT_LIST_DIR}/samples/common/platform/macos/glfw-cocoa-contentview.mm
-                                ${CMAKE_CURRENT_LIST_DIR}/samples/common/platform/macos/glfw-cocoa-contentview.h)
-    elseif(UNIX AND NOT APPLE)
-        set(NICEGRAF_SHADERC_PLATFORM linux)
-	set(NGF_SAMPLES_BACKEND nicegraf-vk)
-    else()
-        message(FATAL_ERROR "Your platform is not currently supported by nicegraf samples.")
-    endif()
-    
-    # Set the folder to hold all samples binaries.
-    set(NGF_SAMPLES_OUTPUT_DIR ${CMAKE_CURRENT_LIST_DIR}/samples/binaries)
-
-
-
-    # Custom target for generated shaders.
-    file(GLOB shader_files ${CMAKE_CURRENT_LIST_DIR}/samples/shaders/*.hlsl)
-    foreach(source_path ${shader_files})
-      file(STRINGS ${source_path} tech_lines REGEX "// *T *: *([a-zA-Z0-9_]+)")
-      if (tech_lines)
-        set(tech_names "")
-        foreach(tech_line ${tech_lines})
-          string(REPLACE ":" ";" tmp ${tech_line})
-          list(GET tmp 1 tmp)
-          string(STRIP "${tmp}" tmp)
-          string(REGEX REPLACE " +" ";" tmp ${tmp})
-          list(GET tmp 0 tech_name)
-          list(APPEND tech_names "${tech_name}")
-        endforeach(tech_line)
-        set(output_files_list "")
-        get_filename_component(header_file_name ${source_path} NAME_WE)
-        if(NOT ${header_file_name} MATCHES "compute-*")
-          foreach(tech ${tech_names})
-            list(APPEND output_files_list "${NGF_SAMPLES_OUTPUT_DIR}/shaders/${tech}.vs.21.msl")
-            list(APPEND output_files_list "${NGF_SAMPLES_OUTPUT_DIR}/shaders/${tech}.ps.21.msl")
-            list(APPEND output_files_list "${NGF_SAMPLES_OUTPUT_DIR}/shaders/${tech}.vs.spv")
-            list(APPEND output_files_list "${NGF_SAMPLES_OUTPUT_DIR}/shaders/${tech}.ps.spv")
-            list(APPEND output_files_list "${NGF_SAMPLES_OUTPUT_DIR}/shaders/${tech}.pipeline")
-          endforeach(tech)
-        else()
-          foreach(tech ${tech_names})
-            list(APPEND output_files_list "${NGF_SAMPLES_OUTPUT_DIR}/shaders/${tech}.cs.21.msl")
-            list(APPEND output_files_list "${NGF_SAMPLES_OUTPUT_DIR}/shaders/${tech}.cs.spv")
-            list(APPEND output_files_list "${NGF_SAMPLES_OUTPUT_DIR}/shaders/${tech}.pipeline")
-          endforeach(tech)
-        endif()
-        list(APPEND output_files_list "${NGF_SAMPLES_OUTPUT_DIR}/shaders/${header_file_name}_binding_consts.h")
-        add_custom_command(OUTPUT ${output_files_list}
-                           MAIN_DEPENDENCY ${source_path}
-                           COMMAND ${CMAKE_CURRENT_LIST_DIR}/samples/deps/niceshade/${NICEGRAF_SHADERC_PLATFORM}/niceshade ARGS ${source_path} "-t" "msl21" "-t" "spv" "-O" "${NGF_SAMPLES_OUTPUT_DIR}/shaders" "-h" "${header_file_name}_binding_consts.h"
-                           WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/samples/shaders)
-        set(generated_shaders_list "${output_files_list};${generated_shaders_list}")
-      endif()
-    endforeach(source_path)
-    add_custom_target(sample-shaders DEPENDS ${generated_shaders_list})
-    set_target_properties(sample-shaders PROPERTIES FOLDER "samples")
-
-    string(TOUPPER "NGF_SAMPLES_BACKEND_${NGF_SAMPLES_BACKEND}" NGF_SAMPLES_BACKEND_DEFINE)
-    string(REPLACE "-" "_" NGF_SAMPLES_BACKEND_DEFINE ${NGF_SAMPLES_BACKEND_DEFINE})
-
-    set(NGF_IMGUI_SRCS ${CMAKE_CURRENT_LIST_DIR}/samples/deps/imgui/imgui.cpp
-                       ${CMAKE_CURRENT_LIST_DIR}/samples/deps/imgui/imgui_draw.cpp
-                       ${CMAKE_CURRENT_LIST_DIR}/samples/deps/imgui/imgui_tables.cpp
-                       ${CMAKE_CURRENT_LIST_DIR}/samples/deps/imgui/imgui_widgets.cpp
-                       ${CMAKE_CURRENT_LIST_DIR}/samples/deps/imgui/imgui_demo.cpp
-                       ${CMAKE_CURRENT_LIST_DIR}/samples/deps/imgui/imgui.cpp
-                       ${CMAKE_CURRENT_LIST_DIR}/samples/deps/imgui/imgui.h
-                       ${CMAKE_CURRENT_LIST_DIR}/samples/deps/imgui/backends/imgui_impl_glfw.h
-                       ${CMAKE_CURRENT_LIST_DIR}/samples/deps/imgui/backends/imgui_impl_glfw.cpp)
-	       
-    if(WIN32)
-        set(NGF_IMGUI_COPTS "")
-    else()
-        # Turn off reporting warnings as errors for ImGui on gcc/clang, because it has a lot of them.
-        set(NGF_IMGUI_COPTS "-Wno-error")
-    endif()
-
-    nmk_static_library(NAME ngf-imgui
-                SRCS ${NGF_IMGUI_SRCS}
-                DEPS glfw
-                PUB_INCLUDES ${CMAKE_CURRENT_LIST_DIR}/samples/deps/imgui
-                             ${CMAKE_CURRENT_LIST_DIR}/samples/deps/imgui/backends
-	              PVT_DEFINES "GLFW_INCLUDE_NONE"
-	            	COPTS ${NGF_IMGUI_COPTS})
-    nmk_static_library(NAME ngf-samples-common
-                       SRCS ${CMAKE_CURRENT_LIST_DIR}/samples/common/main.cpp
-                            ${CMAKE_CURRENT_LIST_DIR}/samples/common/diagnostic-callback.cpp
-                            ${CMAKE_CURRENT_LIST_DIR}/samples/common/shader-loader.cpp
-                            ${CMAKE_CURRENT_LIST_DIR}/samples/common/file-utils.cpp
-                            ${CMAKE_CURRENT_LIST_DIR}/samples/common/file-utils.h
-                            ${CMAKE_CURRENT_LIST_DIR}/samples/common/shader-loader.h
-                            ${CMAKE_CURRENT_LIST_DIR}/samples/common/sample-interface.h
-                            ${CMAKE_CURRENT_LIST_DIR}/samples/common/logging.h
-                            ${CMAKE_CURRENT_LIST_DIR}/samples/common/diagnostic-callback.h
-                            ${CMAKE_CURRENT_LIST_DIR}/samples/common/imgui-backend.h
-                            ${CMAKE_CURRENT_LIST_DIR}/samples/common/imgui-backend.cpp
-                            ${CMAKE_CURRENT_LIST_DIR}/samples/common/targa-loader.h
-                            ${CMAKE_CURRENT_LIST_DIR}/samples/common/targa-loader.cpp
-                            ${CMAKE_CURRENT_LIST_DIR}/samples/common/mesh-loader.h
-                            ${CMAKE_CURRENT_LIST_DIR}/samples/common/mesh-loader.cpp
-                            ${CMAKE_CURRENT_LIST_DIR}/samples/common/staging-image.h
-                            ${CMAKE_CURRENT_LIST_DIR}/samples/common/staging-image.cpp
-                            ${CMAKE_CURRENT_LIST_DIR}/samples/common/camera-controller.h
-                            ${CMAKE_CURRENT_LIST_DIR}/samples/common/camera-controller.cpp
-                            ${NGF_PLATFORM_SOURCE}
-                       DEPS ngf-imgui glfw
-                       PUB_DEFINES  ${NGF_SAMPLES_BACKEND_DEFINE}
-                       PUB_INCLUDES ${CMAKE_CURRENT_LIST_DIR}/samples/common
-                                    ${CMAKE_CURRENT_LIST_DIR}/samples/deps/nicemath)
-    set_target_properties(ngf-samples-common PROPERTIES FOLDER "samples")
-
-    function (ngf_sample)
-        cmake_parse_arguments(SAMPLE "" "NAME" "" ${ARGN})
-        file(GLOB_RECURSE SAMPLE_SRCS ${CMAKE_CURRENT_LIST_DIR}/samples/${SAMPLE_NAME}/*.cpp)
-        nmk_binary(NAME ${SAMPLE_NAME}
-                   SRCS ${SAMPLE_SRCS}
-                   DEPS ngf-samples-common ${NGF_SAMPLES_BACKEND} nicegraf-util
-                   PVT_INCLUDES ${CMAKE_CURRENT_LIST_DIR}/samples/${SAMPLE_NAME}
-		               PVT_DEFINES "GLFW_INCLUDE_NONE"
-                   OUTPUT_DIR "${NGF_SAMPLES_OUTPUT_DIR}")
-        add_dependencies(${SAMPLE_NAME} sample-shaders)                   
-        set_target_properties(${SAMPLE_NAME} PROPERTIES FOLDER "samples")
-    endfunction()
-    file(MAKE_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/samples/binaries/shaders)
-    ngf_sample(NAME 01-fullscreen-triangle)
-    ngf_sample(NAME 02-render-to-texture)
-    ngf_sample(NAME 03-uniform-buffers)
-    ngf_sample(NAME 04-texture-sampling)
-    ngf_sample(NAME 05-cubemap)
-    ngf_sample(NAME 06-vertex-attribs)
-    ngf_sample(NAME 07-blinn-phong)    
-    ngf_sample(NAME 08-image-arrays)    
-    ngf_sample(NAME 09-volume-rendering)
-    ngf_sample(NAME 0a-compute-mandelbrot)
-    ngf_sample(NAME 0b-compute-vertices)
-    ngf_sample(NAME 0c-render-to-multisample-texture)
+    set(NGF_PLATFORM_SOURCE ${NGF_PLATFORM_SOURCE}
+                            ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/platform/macos/main.mm
+                            ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/platform/macos/glfw-cocoa-contentview.mm
+                            ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/platform/macos/glfw-cocoa-contentview.h)
+elseif(UNIX AND NOT APPLE)
+    set(NICEGRAF_SHADERC_PLATFORM linux)
+set(TILEDB_VIEWER_BACKEND nicegraf-vk)
+else()
+    message(FATAL_ERROR "Your platform is not currently supported by nicegraf.")
 endif()
+
+# Set the folder to hold all samples binaries.
+set(TILEDB_VIEWER_OUTPUT_DIR ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/binaries)
+
+
+
+# Custom target for generated shaders.
+file(GLOB shader_files ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/shaders/*.hlsl)
+foreach(source_path ${shader_files})
+  file(STRINGS ${source_path} tech_lines REGEX "// *T *: *([a-zA-Z0-9_]+)")
+  if (tech_lines)
+    set(tech_names "")
+    foreach(tech_line ${tech_lines})
+      string(REPLACE ":" ";" tmp ${tech_line})
+      list(GET tmp 1 tmp)
+      string(STRIP "${tmp}" tmp)
+      string(REGEX REPLACE " +" ";" tmp ${tmp})
+      list(GET tmp 0 tech_name)
+      list(APPEND tech_names "${tech_name}")
+    endforeach(tech_line)
+    set(output_files_list "")
+    get_filename_component(header_file_name ${source_path} NAME_WE)
+    if(NOT ${header_file_name} MATCHES "compute-*")
+      foreach(tech ${tech_names})
+        list(APPEND output_files_list "${TILEDB_VIEWER_OUTPUT_DIR}/shaders/${tech}.vs.21.msl")
+        list(APPEND output_files_list "${TILEDB_VIEWER_OUTPUT_DIR}/shaders/${tech}.ps.21.msl")
+        list(APPEND output_files_list "${TILEDB_VIEWER_OUTPUT_DIR}/shaders/${tech}.vs.spv")
+        list(APPEND output_files_list "${TILEDB_VIEWER_OUTPUT_DIR}/shaders/${tech}.ps.spv")
+        list(APPEND output_files_list "${TILEDB_VIEWER_OUTPUT_DIR}/shaders/${tech}.pipeline")
+      endforeach(tech)
+    else()
+      foreach(tech ${tech_names})
+        list(APPEND output_files_list "${TILEDB_VIEWER_OUTPUT_DIR}/shaders/${tech}.cs.21.msl")
+        list(APPEND output_files_list "${TILEDB_VIEWER_OUTPUT_DIR}/shaders/${tech}.cs.spv")
+        list(APPEND output_files_list "${TILEDB_VIEWER_OUTPUT_DIR}/shaders/${tech}.pipeline")
+      endforeach(tech)
+    endif()
+    list(APPEND output_files_list "${TILEDB_VIEWER_OUTPUT_DIR}/shaders/${header_file_name}_binding_consts.h")
+    add_custom_command(OUTPUT ${output_files_list}
+                        MAIN_DEPENDENCY ${source_path}
+                        COMMAND ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/deps/niceshade/${NICEGRAF_SHADERC_PLATFORM}/niceshade ARGS ${source_path} "-t" "msl21" "-t" "spv" "-O" "${TILEDB_VIEWER_OUTPUT_DIR}/shaders" "-h" "${header_file_name}_binding_consts.h"
+                        WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/shaders)
+    set(generated_shaders_list "${output_files_list};${generated_shaders_list}")
+  endif()
+endforeach(source_path)
+add_custom_target(tiledb-viewer-shaders DEPENDS ${generated_shaders_list})
+set_target_properties(tiledb-viewer-shaders PROPERTIES FOLDER "tiledb-viewer")
+
+string(TOUPPER "TILEDB_VIEWER_BACKEND_${TILEDB_VIEWER_BACKEND}" TILEDB_VIEWER_BACKEND_DEFINE)
+string(REPLACE "-" "_" TILEDB_VIEWER_BACKEND_DEFINE ${TILEDB_VIEWER_BACKEND_DEFINE})
+
+set(NGF_IMGUI_SRCS ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/deps/imgui/imgui.cpp
+                    ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/deps/imgui/imgui_draw.cpp
+                    ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/deps/imgui/imgui_tables.cpp
+                    ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/deps/imgui/imgui_widgets.cpp
+                    ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/deps/imgui/imgui_demo.cpp
+                    ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/deps/imgui/imgui.cpp
+                    ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/deps/imgui/imgui.h
+                    ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/deps/imgui/backends/imgui_impl_glfw.h
+                    ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/deps/imgui/backends/imgui_impl_glfw.cpp)
+      
+if(WIN32)
+    set(NGF_IMGUI_COPTS "")
+else()
+    # Turn off reporting warnings as errors for ImGui on gcc/clang, because it has a lot of them.
+    set(NGF_IMGUI_COPTS "-Wno-error")
+endif()
+
+nmk_static_library(NAME ngf-imgui
+            SRCS ${NGF_IMGUI_SRCS}
+            DEPS glfw
+            PUB_INCLUDES ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/deps/imgui
+                          ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/deps/imgui/backends
+            PVT_DEFINES "GLFW_INCLUDE_NONE"
+            COPTS ${NGF_IMGUI_COPTS})
+nmk_static_library(NAME tiledb-viewer-common
+                    SRCS ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/main.cpp
+                        ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/diagnostic-callback.cpp
+                        ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/shader-loader.cpp
+                        ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/file-utils.cpp
+                        ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/file-utils.h
+                        ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/shader-loader.h
+                        ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/sample-interface.h
+                        ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/logging.h
+                        ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/diagnostic-callback.h
+                        ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/imgui-backend.h
+                        ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/imgui-backend.cpp
+                        ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/targa-loader.h
+                        ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/targa-loader.cpp
+                        ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/mesh-loader.h
+                        ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/mesh-loader.cpp
+                        ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/staging-image.h
+                        ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/staging-image.cpp
+                        ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/camera-controller.h
+                        ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common/camera-controller.cpp
+                        ${NGF_PLATFORM_SOURCE}
+                    DEPS ngf-imgui glfw
+                    PUB_DEFINES  ${TILEDB_VIEWER_BACKEND_DEFINE}
+                    PUB_INCLUDES ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/common
+                                ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/deps/nicemath)
+set_target_properties(tiledb-viewer-common PROPERTIES FOLDER "tiledb-viewer")
+
+file(GLOB_RECURSE ALL_SRCS ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/tiledb/*.cpp)
+nmk_binary(NAME tiledb-viewer
+            SRCS ${ALL_SRCS}
+            DEPS tiledb-viewer-common ${TILEDB_VIEWER_BACKEND} nicegraf-util
+            PVT_INCLUDES ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/tiledb}
+            PVT_DEFINES "GLFW_INCLUDE_NONE"
+            OUTPUT_DIR "${TILEDB_VIEWER_OUTPUT_DIR}")
+add_dependencies(tiledb-viewer tiledb-viewer-shaders)                   
+set_target_properties(tiledb-viewer PROPERTIES FOLDER "tiledb-viewer")
+
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/binaries/shaders)

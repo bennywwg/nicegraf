@@ -1,0 +1,27 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct PSMain_out
+{
+    float4 out_var_SV_Target [[color(0)]];
+};
+
+struct PSMain_in
+{
+    float in_var_ATTR0 [[user(locn0)]];
+};
+
+fragment PSMain_out PSMain(PSMain_in in [[stage_in]])
+{
+    PSMain_out out = {};
+    float _19 = fast::clamp(fma(in.in_var_ATTR0, -5.5555553436279296875, 0.5), 0.0, 1.0);
+    out.out_var_SV_Target = float4(1.0) * (_19 * _19);
+    return out;
+}
+
+/**NGF_NATIVE_BINDING_MAP
+(0 0) : 0
+(-1 -1) : -1
+**/

@@ -1,0 +1,29 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct type_RWStructuredBuffer_v4float
+{
+    float4 _m0[1];
+};
+
+struct type_ConstantBuffer_ComputeShaderUniforms
+{
+    float4 time;
+};
+
+kernel void CSMain(device type_RWStructuredBuffer_v4float& outputBuffer [[buffer(0)]], constant type_ConstantBuffer_ComputeShaderUniforms& computeShaderUniforms [[buffer(1)]], uint3 gl_GlobalInvocationID [[thread_position_in_grid]])
+{
+    float _36 = float(gl_GlobalInvocationID.x);
+    float _38 = float(gl_GlobalInvocationID.y);
+    float2 _42 = (float2(_36 * 0.001956947147846221923828125, _38 * 0.001956947147846221923828125) * 2.0) - float2(1.0);
+    outputBuffer._m0[(gl_GlobalInvocationID.y * 512u) + gl_GlobalInvocationID.x] = float4(_42.x, 0.0500000007450580596923828125 * sin(fma(_38, 0.100000001490116119384765625, cos(fma(computeShaderUniforms.time.x, 2.0, _36 * 0.100000001490116119384765625)))), _42.y, 1.0);
+}
+
+/**NGF_NATIVE_BINDING_MAP
+(1 0) : 0
+(1 1) : 1
+(-1 -1) : -1
+**/
+/**NGF_THREADGROUP_SIZE 2 2 1 */

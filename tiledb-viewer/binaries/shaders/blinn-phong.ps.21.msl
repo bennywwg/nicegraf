@@ -1,0 +1,85 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+constant uint enableHalfLambert_tmp [[function_constant(0)]];
+constant uint enableHalfLambert = is_function_constant_defined(enableHalfLambert_tmp) ? enableHalfLambert_tmp : 0u;
+
+struct type_ConstantBuffer_ShaderUniforms
+{
+    float4x4 objToViewTransform;
+    float4x4 viewToClipTransform;
+    float4 ambientLightIntensity;
+    float4 viewSpacePointLightPosition;
+    float4 pointLightIntensity;
+    float4 viewSpaceDirectionalLightDirection;
+    float4 directionalLightIntensity;
+    float4 diffuseReflectance;
+    float4 specularCoefficient;
+    float shininess;
+};
+
+constant bool _35 = (enableHalfLambert == 0u);
+
+struct PSMain_out
+{
+    float4 out_var_SV_Target [[color(0)]];
+};
+
+struct PSMain_in
+{
+    float4 in_var_ATTR0 [[user(locn0)]];
+    float4 in_var_ATTR1 [[user(locn1)]];
+};
+
+fragment PSMain_out PSMain(PSMain_in in [[stage_in]], constant type_ConstantBuffer_ShaderUniforms& shaderUniforms [[buffer(0)]])
+{
+    PSMain_out out = {};
+    float4 _42 = shaderUniforms.viewSpacePointLightPosition - in.in_var_ATTR1;
+    float3 _48 = fast::normalize(_42).xyz;
+    float3 _49 = fast::normalize(in.in_var_ATTR0).xyz;
+    float _59;
+    do
+    {
+        float _52 = dot(_48, _49);
+        if (_35)
+        {
+            _59 = precise::max(0.0, _52);
+            break;
+        }
+        else
+        {
+            float _56 = fma(0.5, _52, 0.5);
+            _59 = _56 * _56;
+            break;
+        }
+        break; // unreachable workaround
+    } while(false);
+    float3 _69 = fast::normalize(shaderUniforms.viewSpaceDirectionalLightDirection.xyz);
+    float _79;
+    do
+    {
+        float _72 = dot(_69, _49);
+        if (_35)
+        {
+            _79 = precise::max(0.0, _72);
+            break;
+        }
+        else
+        {
+            float _76 = fma(0.5, _72, 0.5);
+            _79 = _76 * _76;
+            break;
+        }
+        break; // unreachable workaround
+    } while(false);
+    float3 _88 = fast::normalize(-in.in_var_ATTR1.xyz);
+    out.out_var_SV_Target = float4(fma(fma(shaderUniforms.specularCoefficient.xyz, float3(pow(precise::max(0.0, dot(_49, fast::normalize(_88 + _48))), shaderUniforms.shininess)), shaderUniforms.diffuseReflectance.xyz), (shaderUniforms.pointLightIntensity.xyz * _59) / float3(dot(_42, _42)), fma(shaderUniforms.specularCoefficient.xyz, float3(pow(precise::max(0.0, dot(_49, fast::normalize(_88 + _69))), shaderUniforms.shininess)), shaderUniforms.diffuseReflectance.xyz) * (shaderUniforms.directionalLightIntensity.xyz * _79)) + shaderUniforms.ambientLightIntensity.xyz, 1.0);
+    return out;
+}
+
+/**NGF_NATIVE_BINDING_MAP
+(0 0) : 0
+(-1 -1) : -1
+**/
