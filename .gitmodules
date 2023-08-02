@@ -1,10 +1,13 @@
-[submodule "samples/deps/imgui"]
-	path = samples/deps/imgui
+[submodule "tiledb-viewer/deps/imgui"]
+	path = tiledb-viewer/deps/imgui
 	url = https://github.com/ocornut/imgui
-[submodule "samples/deps/nicemath"]
-	path = samples/deps/nicemath
+[submodule "tiledb-viewer/deps/nicemath"]
+	path = tiledb-viewer/deps/nicemath
 	url = https://github.com/nicebyte/nicemath
-[submodule "samples/deps/glfw"]
-	path = samples/deps/glfw
+[submodule "tiledb-viewer/deps/glfw"]
+	path = tiledb-viewer/deps/glfw
 	url = https://github.com/glfw/glfw
 	branch = 3.3-stable
+[submodule "tiledb"]
+	path = tiledb
+	url = https://github.com/bennywwg/tiledb
