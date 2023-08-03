@@ -25,10 +25,14 @@
 #include "imgui.h"
 #include <stdio.h>
 
+#include <Database/DatabaseClient.hpp>
+
 namespace ngf_samples {
 
 struct sample_data {
   uint32_t magic_number = 0xdeadbeef;
+    
+  DatabaseClient* client = nullptr;
 };
 
 void* sample_initialize(
@@ -38,6 +42,7 @@ void* sample_initialize(
     ngf_xfer_encoder xfer_encoder) {
   printf("sample initializing.\n");
   auto d = new sample_data{};
+  d->client = new DatabaseClient("127.0.0.1");
   d->magic_number = 0xbadf00d;
   printf("sample initialization complete.\n");
   return static_cast<void*>(d);
@@ -57,7 +62,7 @@ void sample_draw_frame(
     float              time,
     void*              userdata) {
   auto data = static_cast<sample_data*>(userdata);
-  printf("drawing frame %d (w %d h %d) at time %f magic number 0x%x\n", (int)frame_token, width, height, time, data->magic_number);
+  //printf("drawing frame %d (w %d h %d) at time %f magic number 0x%x\n", (int)frame_token, width, height, time, data->magic_number);
 }
 
 void sample_post_submit(void* userdata)

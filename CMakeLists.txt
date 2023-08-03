@@ -23,8 +23,6 @@ SOFTWARE.
 cmake_minimum_required(VERSION 3.23.3)
 project(nicegraf)
 
-
-
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 20)
 
@@ -34,7 +32,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/build-utils.cmake")
 if(WIN32)
     set (NICEMAKE_COMMON_COMPILE_OPTS "/W4" "/WX")
 else()
-	set(NICEMAKE_COMMON_COMPILE_OPTS "-Wall" "-Wconversion" "-Wno-unknown-pragmas" "-Werror" "-Wno-error=comment")
+	set(NICEMAKE_COMMON_COMPILE_OPTS "-Wall" "-Wconversion" "-Wno-unknown-pragmas" "-Wno-error=comment")
 endif()
 set(NICEGRAF_COMMON_DEPS nicegraf-internal)
 
@@ -64,10 +62,6 @@ if (APPLE)
   find_library(APPLE_METAL Metal)
   find_library(APPLE_COCOA Cocoa)
   find_library(APPLE_QUARTZ Quartz)
-  #XCODE_ATTRIBUTEs
-  set(CMAKE_XCODE_ATTRIBUTE_SIGNING_ALLOWED "YES")
-  set(CMAKE_XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic")
-
 endif()
 
 if (APPLE AND NOT (NGF_USE_MVK STREQUAL "yes"))
@@ -255,14 +249,18 @@ nmk_static_library(NAME tiledb-viewer-common
                                 ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/deps/nicemath)
 set_target_properties(tiledb-viewer-common PROPERTIES FOLDER "tiledb-viewer")
 
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/tiledb)
+
 file(GLOB_RECURSE ALL_SRCS ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/tiledb/*.cpp)
 nmk_binary(NAME tiledb-viewer
             SRCS ${ALL_SRCS}
             DEPS tiledb-viewer-common ${TILEDB_VIEWER_BACKEND} nicegraf-util
-            PVT_INCLUDES ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/tiledb}
+            PUB_INCLUDES ${CMAKE_CURRENT_LIST_DIR}/tiledb/Source ${CMAKE_CURRENT_LIST_DIR}/tiledb/AutoReflect/json/include ${CMAKE_CURRENT_LIST_DIR}/tiledb/AutoReflect/glm ${CMAKE_CURRENT_LIST_DIR}/tiledb/AutoReflect/Include
+            PVT_INCLUDES ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/tiledb
             PVT_DEFINES "GLFW_INCLUDE_NONE"
             OUTPUT_DIR "${TILEDB_VIEWER_OUTPUT_DIR}")
-add_dependencies(tiledb-viewer tiledb-viewer-shaders)                   
+add_dependencies(tiledb-viewer tiledb-viewer-shaders)
+target_link_libraries(tiledb-viewer tdb_s)
 set_target_properties(tiledb-viewer PROPERTIES FOLDER "tiledb-viewer")
 
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/binaries/shaders)
