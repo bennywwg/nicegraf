@@ -642,8 +642,12 @@ template<typename T> class uniform_multibuffer {
   uniform_multibuffer& operator=(const uniform_multibuffer&)  = delete;
 
   ngf_error initialize(const uint32_t frames) {
+    initialize_n(frames, 1);
+  }
+
+  ngf_error initialize_n(const uint32_t frames, const uint32_t num_elements) {
     const size_t alignment    = ngf_get_device_capabilities()->uniform_buffer_offset_alignment;
-    const size_t aligned_size = ngf_util_align_size(sizeof(T), alignment);
+    const size_t aligned_size = ngf_util_align_size(sizeof(T) * num_elements, alignment);
     NGF_RETURN_IF_ERROR(buf_.initialize(ngf_buffer_info {
         aligned_size * frames,
         NGF_BUFFER_STORAGE_HOST_WRITEABLE,
@@ -654,9 +658,13 @@ template<typename T> class uniform_multibuffer {
   }
 
   void write(const T& data) {
+    write_n(&data, 1);
+  }
+
+  void write_n(const T* const data, const uint32_t num_elements) {
     current_offset_  = (frame_)*aligned_per_frame_size_;
     void* mapped_buf = ngf_buffer_map_range(buf_.get(), current_offset_, aligned_per_frame_size_);
-    memcpy(mapped_buf, (void*)&data, sizeof(T));
+    memcpy(mapped_buf, (void*)data, sizeof(T) * num_elements);
     ngf_buffer_flush_range(buf_.get(), 0, aligned_per_frame_size_);
     ngf_buffer_unmap(buf_.get());
     frame_ = (frame_ + 1u) % nframes_;
