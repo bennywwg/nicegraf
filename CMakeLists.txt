@@ -251,7 +251,7 @@ set_target_properties(tiledb-viewer-common PROPERTIES FOLDER "tiledb-viewer")
 
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/tiledb)
 
-file(GLOB_RECURSE ALL_SRCS ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/tiledb/*.cpp)
+file(GLOB_RECURSE ALL_SRCS ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/tiledb/*.cpp ${CMAKE_CURRENT_LIST_DIR}/tiledb-viewer/tiledb/*.hpp)
 nmk_binary(NAME tiledb-viewer
             SRCS ${ALL_SRCS}
             DEPS tiledb-viewer-common ${TILEDB_VIEWER_BACKEND} nicegraf-util

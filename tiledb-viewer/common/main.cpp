@@ -176,7 +176,7 @@ int NGF_SAMPLES_COMMON_MAIN(int, char**) {
   constexpr uint32_t window_width_hint = 800, window_height_hint = 600;
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
   GLFWwindow* window =
-      glfwCreateWindow(window_width_hint, window_height_hint, "nicegraf sample", nullptr, nullptr);
+      glfwCreateWindow(window_width_hint, window_height_hint, "TileDB Viewer", nullptr, nullptr);
   if (window == nullptr) {
     ngf_samples::loge("Failed to create a window, exiting.");
     return 0;
