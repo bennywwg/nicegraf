@@ -20,7 +20,7 @@ template<typename T> class storage_multibuffer {
     const size_t alignment    = ngf_get_device_capabilities()->uniform_buffer_offset_alignment;
     const size_t aligned_size = ngf_util_align_size(sizeof(T) * num_elements, alignment);
     NGF_RETURN_IF_ERROR(buf_.initialize(ngf_buffer_info {
-        aligned_size * frames,
+        aligned_size,
         NGF_BUFFER_STORAGE_PRIVATE,
         NGF_BUFFER_USAGE_STORAGE_BUFFER | NGF_BUFFER_USAGE_XFER_DST}));
     NGF_RETURN_IF_ERROR(staging_buf_.initialize(ngf_buffer_info {
@@ -41,7 +41,7 @@ template<typename T> class storage_multibuffer {
   }
 
   void enqueue_copy(ngf_xfer_encoder xfer_enc) {
-    ngf_cmd_copy_buffer(xfer_enc, staging_buf_.get(), buf_.get(), aligned_per_frame_size_, current_offset_, current_offset_);
+    ngf_cmd_copy_buffer(xfer_enc, staging_buf_.get(), buf_.get(), aligned_per_frame_size_, current_offset_, 0);
   }
 
   void advance_frame() {
@@ -58,7 +58,7 @@ template<typename T> class storage_multibuffer {
     op.target_binding     = binding;
     op.target_set         = set;
     op.info.buffer.buffer = buf_.get();
-    op.info.buffer.offset = current_offset_ + additional_offset;
+    op.info.buffer.offset = 0;
     op.info.buffer.range  = (range == 0) ? aligned_per_frame_size_ : range;
     return op;
   }
@@ -124,7 +124,7 @@ class image_uploader {
           }, ngf_offset3d {
               .x = static_cast<int32_t>(write.offset.x),
               .y = static_cast<int32_t>(write.offset.y),
-              .z = static_cast<int32_t>(write.offset.z)
+              .z = 0
           }, ngf_extent3d {
               .width = write.extent.x,
               .height = write.extent.y,

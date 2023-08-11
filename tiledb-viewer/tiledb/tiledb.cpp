@@ -39,6 +39,11 @@
 
 #define MAX_NUM_GRIDS 4
 
+template<typename T>
+T CorrectMod(T Lhs, T Rhs) {
+    return (Rhs + (Lhs % Rhs)) % Rhs;
+}
+
 namespace ngf_samples {
 
 ngf_image_format format_tiledb_to_ngf(ImageFormat Format) {
@@ -59,17 +64,13 @@ AutoReflect::EncodedImage MakeFakeImage(glm::ivec3 Coord) {
         .Size = glm::uvec3(400, 400, 1)
     };
     
-    glm::ivec2 BasePos = Coord;
+    glm::ivec2 BasePos = glm::ivec2(Coord) * (1 << Coord.z) * glm::ivec2(400, 400);
     
     std::vector<uint8_t> ImgData(400 * 400 * 2);
     for (size_t i = 0; i < ImgData.size(); i += 2) {
-        glm::ivec2 FullPos = BasePos + glm::ivec2((i/2) % 400, (i/2) / 400);
+        glm::ivec2 FullPos = BasePos + glm::ivec2((i/2) % 400, (i/2) / 400) * (1 << Coord.z);
         float Val = glm::sin(glm::length(glm::vec2(FullPos)) * 0.1f) + 1.0f;
         *reinterpret_cast<uint16_t*>(&ImgData[i]) = uint16_t(Val * 5000);
-        std::swap(
-                  *reinterpret_cast<uint8_t*>(&ImgData[i]),
-                  *reinterpret_cast<uint8_t*>(&ImgData[i + 1])
-                  );
     }
     return AutoReflect::EncodedImage {
         .Format = {
@@ -367,12 +368,19 @@ void sample_pre_draw_frame(ngf_cmd_buffer cmd_buffer, main_render_pass_sync_info
             
             for(size_t i = 0; i < gpuData.GPUPopulatedTiles.size(); ++i) {
                 if (gpuData.GPUPopulatedTiles[i] == toAdd) {
-                    gpuData.GPUPopulatedTiles.erase(gpuData.GPUPopulatedTiles.begin() + i);
+                    gpuData.GPUPopulatedTiles.erase(gpuData.GPUPopulatedTiles.begin() + (int64_t)i);
                     break;
                 }
             }
             
             gpuData.GPUPopulatedTiles.push_back(toAdd);
+            
+            glm::ivec2 ModulodToAdd = CorrectMod(glm::ivec2(toAdd), glm::ivec2(gpuData.GridSize));
+            
+            gpuData.ImageUploader.update_section(MakeFakeImage(toAdd), glm::ivec3(
+                                                                                  ModulodToAdd.x * static_cast<int32_t>(gpuData.Format.Size.x),
+                                                                                  ModulodToAdd.y * static_cast<int32_t>(gpuData.Format.Size.y),
+                                                                                  toAdd.z));
         }
     }
     
