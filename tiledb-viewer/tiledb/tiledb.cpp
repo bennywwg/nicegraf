@@ -29,13 +29,15 @@
 
 #include <iostream>
 #include <vector>
+#include <thread>
+#include <mutex>
 
 #include <Database/DatabaseClient.hpp>
 #include <Commands/AllCommands.hpp>
 #include <Transfer/ImageTransfer.hpp>
 #include <glm/ext.hpp>
 
-#define TEST_MODE true
+#define TEST_MODE false
 
 #define MAX_NUM_GRIDS 4
 
@@ -61,14 +63,14 @@ AutoReflect::EncodedImage MakeFakeImage(glm::ivec3 Coord) {
             .Type = NumberType::U16,
             .NumChannels = ChannelCount::One
         },
-        .Size = glm::uvec3(400, 400, 1)
+        .Size = glm::uvec3(1201, 1201, 1)
     };
     
-    glm::ivec2 BasePos = glm::ivec2(Coord) * (1 << Coord.z) * glm::ivec2(400, 400);
+    glm::ivec2 BasePos = glm::ivec2(Coord) * (1 << Coord.z) * glm::ivec2(1201, 1201);
     
-    std::vector<uint8_t> ImgData(400 * 400 * 2);
+    std::vector<uint8_t> ImgData(1201 * 1201 * 2);
     for (size_t i = 0; i < ImgData.size(); i += 2) {
-        glm::ivec2 FullPos = BasePos + glm::ivec2((i/2) % 400, (i/2) / 400) * (1 << Coord.z);
+        glm::ivec2 FullPos = BasePos + glm::ivec2((i/2) % 1201, (i/2) / 1201) * (1 << Coord.z);
         float Val = glm::sin(glm::length(glm::vec2(FullPos)) * 0.1f) + 1.0f;
         *reinterpret_cast<uint16_t*>(&ImgData[i]) = uint16_t(Val * 5000);
     }
@@ -85,8 +87,8 @@ struct ui_state {
     
     int NumGrids = MAX_NUM_GRIDS;
     
-    float X = 0.5f;
-    float Y = 0.5f;
+    float X = 100.0f;
+    float Y = 111.0f;
     float Zoom = 0.0f;
     
     glm::ivec2 ViewRange = glm::ivec2(0, 10000);
@@ -168,25 +170,6 @@ struct GPU_Data {
         return Res;
     }
     
-    // Returns a vector that includes all elements that are both in LHS and RHS
-    // Assumes no duplicates
-    std::vector<glm::ivec3> Intersection(std::vector<glm::ivec3> LHS, const std::vector<glm::ivec3>& RHS) {
-        for (size_t i = 0; i < LHS.size(); ++i) {
-            bool Found = false;
-            for (glm::ivec3 const& RHSElement : RHS) {
-                if (RHSElement == LHS[i]) {
-                    Found = true;
-                    break;
-                }
-            }
-            if (!Found) {
-                LHS.erase(LHS.begin() + static_cast<int64_t>(i));
-                --i;
-            }
-        }
-        return LHS;
-    }
-    
     // Return an occupied table for all the given tile ids, based off
     // The current grid location. Any tile ids outside of the current
     // grids are ignored
@@ -250,37 +233,110 @@ struct GPU_Data {
         
         ImageUploader.initialize(3, 4 * 1024 * 1024);
     }
-    
-    void UploadImageData(ngf_xfer_encoder xfer_encoder, int Layer, glm::ivec2 GridCoord, const AutoReflect::EncodedImage& Image) {
-        void* buf_mapped = ngf_buffer_map_range(StagingBuffer, 0, Image.Data.size());
-        memcpy(buf_mapped, Image.Data.data(), Image.Data.size());
-        for (int i = 0; i < Image.Data.size(); i += 2) {
-            std::swap(reinterpret_cast<uint8_t*>(buf_mapped)[i], reinterpret_cast<uint8_t*>(buf_mapped)[i + 1]);
-        }
-        ngf_buffer_unmap(StagingBuffer);
-        ngf_buffer_flush_range(StagingBuffer, 0, Image.Data.size());
-        ngf_cmd_write_image(
-                            xfer_encoder,
-                            StagingBuffer,
-                            0,
-                            ngf_image_ref {
-                                .image = ImageData,
-                                .mip_level = 0,
-                                .layer = 0
-                            },
-                            ngf_offset3d { 0, 0, 0 },
-                            ngf_extent3d { Image.Format.Format.Size.x, Image.Format.Format.Size.y, 1 },
-                            1
-                            );
-    }
 };
 
 struct viewer_state {
-    DatabaseClient* client = nullptr;
-    
     GPU_Data GPUData;
     
     ui_state UI;
+    
+    DatabaseClient* client = nullptr;
+    std::string TilesetUUID;
+    std::vector<glm::ivec3> AllClientTiles;
+    
+    static constexpr size_t MaxImages = 2;
+    std::mutex RequestMut;
+    std::vector<glm::ivec3> RequestedCoords;
+    std::mutex ResultsMut;
+    std::vector<std::pair<AutoReflect::EncodedImage, glm::ivec3>> ResultImages;
+    std::thread ClientThread;
+    
+    std::atomic_bool CloseClientThread = false;
+    
+    void SetRequestedCoords(const std::vector<glm::ivec3>& Requests) {
+        std::lock_guard<std::mutex> RequestLock(RequestMut);
+        RequestedCoords = Requests;
+    }
+    
+    std::optional<std::pair<EncodedImage, glm::ivec3>> PopResultImage() {
+        std::lock_guard<std::mutex> RequestLock(ResultsMut);
+        if (ResultImages.size() > 0) {
+            auto Res = ResultImages[0];
+            ResultImages.erase(ResultImages.begin());
+            return Res;
+        } else {
+            return std::nullopt;
+        }
+    }
+    
+    void ProcessClient() {
+        while (!CloseClientThread) {
+            glm::ivec3 ToGet;
+            bool ShouldContinue = false;
+            {
+                std::lock_guard<std::mutex> RequestLock(RequestMut);
+                if (RequestedCoords.size() == 0) {
+                    ShouldContinue = true;
+                } else {
+                    ToGet = RequestedCoords[0];
+                    RequestedCoords.erase(RequestedCoords.begin());
+                }
+            }
+            
+            if (!ShouldContinue) {
+                std::lock_guard<std::mutex> RequestLock(ResultsMut);
+                if (ResultImages.size() >= MaxImages) {
+                    ShouldContinue = true;
+                }
+            }
+            
+            if (ShouldContinue) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+            
+            AutoReflect::CommandReadTile readCmd;
+            readCmd.UUID.Coord.Coord = ToGet;
+            readCmd.UUID.TilesetUUID = TilesetUUID;
+            std::cout << "Requesting " << ToGet.x << ", " << ToGet.y << "\n";
+            const auto now = std::chrono::system_clock::now();
+            auto TileData = client->RequestSynchronous(readCmd);
+            // Invert image along x and y axis
+            if (TileData.Success) {
+                uint16_t* Data = reinterpret_cast<uint16_t*>(&TileData.Image.Data[0]);
+                for (size_t y = 0; y < TileData.Image.Format.Format.Size.y; ++y) {
+                    for (size_t x = 0; x < TileData.Image.Format.Format.Size.x; ++x) {
+                        size_t inv_x = TileData.Image.Format.Format.Size.x - x - 1;
+                        if (inv_x <= x) break;
+                        std::swap(Data[y * TileData.Image.Format.Format.Size.x + x], Data[y * TileData.Image.Format.Format.Size.x + inv_x]);
+                    }
+                }
+                
+                // Now y
+                for (size_t x = 0; x < TileData.Image.Format.Format.Size.x; ++x) {
+                    for (size_t y = 0; y < TileData.Image.Format.Format.Size.y; ++y) {
+                        size_t inv_y = TileData.Image.Format.Format.Size.y - y - 1;
+                        if (inv_y <= y) break;
+                        std::swap(Data[y * TileData.Image.Format.Format.Size.x + x], Data[inv_y * TileData.Image.Format.Format.Size.x + x]);
+                    }
+                }
+
+                // Swap endian
+                for (size_t i = 0; i < TileData.Image.Data.size(); i += 2) {
+                    std::swap(TileData.Image.Data[i], TileData.Image.Data[i + 1]);
+                }
+            }
+            
+            std::cout << "Took " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << "ms\n";
+            
+            if (TileData.Success) {
+                std::lock_guard<std::mutex> RequestLock(ResultsMut);
+                ResultImages.emplace_back(TileData.Image, ToGet);
+            }
+        }
+    }
+    
+    
 };
 
 void* sample_initialize(
@@ -302,7 +358,7 @@ void* sample_initialize(
     
     auto AllTilesetsResponse = state->client->RequestSynchronous(AutoReflect::CommandGetAllTilesets());
     if (!AllTilesetsResponse.Tilesets.empty()) {
-        gpuState.Initialize(xfer_encoder, AllTilesetsResponse.Tilesets[0].Format.Format, glm::uvec2(3, 2), NUM_GRIDS);
+        gpuState.Initialize(xfer_encoder, AllTilesetsResponse.Tilesets[0].Format.Format, glm::uvec2(3, 2), 4);
     } else {
         return reinterpret_cast<void*>(state);
     }
@@ -310,13 +366,15 @@ void* sample_initialize(
     AutoReflect::CommandGetAllTiles cmd;
     cmd.TilesetUUID = AllTilesetsResponse.Tilesets[0].ID;
     auto AllTiles = state->client->RequestSynchronous(cmd);
+    for (auto Tile : *AllTiles.Tiles) {
+        state->AllClientTiles.push_back(Tile.Coord);
+    }
     
-    AutoReflect::CommandReadTile readCmd;
-    readCmd.UUID.Coord = (*AllTiles.Tiles)[418];
-    readCmd.UUID.TilesetUUID = AllTilesetsResponse.Tilesets[0].ID;
-    auto TileData = state->client->RequestSynchronous(readCmd);
+    state->TilesetUUID = AllTilesetsResponse.Tilesets[0].ID;
     
-    gpuState.UploadImageData(xfer_encoder, 0, glm::ivec2(0, 0), TileData.Image);
+    state->ClientThread = std::thread([state]() {
+        state->ProcessClient();
+    });
 #else
     auto Img = MakeFakeImage(glm::ivec3(0, 0, 0));
     
@@ -352,15 +410,15 @@ void sample_pre_draw_frame(ngf_cmd_buffer cmd_buffer, main_render_pass_sync_info
     
     if (!state->UI.FreezeGridLocations) {
         gpuData.UpdateGridInfos(glm::vec2(state->UI.X, state->UI.Y));
-        
-        gpuData.GPUPopulatedTiles = gpuData.Intersection(gpuData.GetTileIDsInGrids(), gpuData.GPUPopulatedTiles);
-        
-        gpuData.GridInfosMultibuf.write_n(gpuData.GridInfos);
     }
     
+    const std::vector<glm::ivec3> AllInGrid = gpuData.GetTileIDsInGrids();
+    
+    gpuData.GridInfosMultibuf.write_n(gpuData.GridInfos);
+    
     // Debugging, add random grid to list
+#if TEST_MODE
     {
-        auto RequiredList = gpuData.GetTileIDsInGrids();
         int randVal = rand();
         if (randVal >= 0) {
             randVal = randVal % static_cast<int32_t>(RequiredList.size());
@@ -383,6 +441,27 @@ void sample_pre_draw_frame(ngf_cmd_buffer cmd_buffer, main_render_pass_sync_info
                                                                                   toAdd.z));
         }
     }
+#else
+    {
+        std::vector<glm::ivec3> AllInGridNotLoaded = Difference(AllInGrid, gpuData.GPUPopulatedTiles);
+        
+        state->SetRequestedCoords(AllInGridNotLoaded);
+        
+        if (auto ImageOption = state->PopResultImage()) {
+            if (Intersection({ ImageOption->second }, AllInGrid).size() > 0) {
+                glm::ivec2 ModulodToAdd = CorrectMod(glm::ivec2(ImageOption->second), glm::ivec2(gpuData.GridSize));
+                gpuData.ImageUploader.update_section(ImageOption->first, glm::ivec3(
+                                                                                    ModulodToAdd.x * static_cast<int32_t>(gpuData.Format.Size.x),
+                                                                                    ModulodToAdd.y * static_cast<int32_t>(gpuData.Format.Size.y),
+                                                                                    ImageOption->second.z));
+                
+                gpuData.GPUPopulatedTiles.push_back(ImageOption->second);
+            }
+        }
+    }
+#endif
+    
+    gpuData.GPUPopulatedTiles = Intersection(AllInGrid, gpuData.GPUPopulatedTiles);
     
     gpuData.OccupiedMultibuf.write_n(gpuData.GetOccupiedData(gpuData.GPUPopulatedTiles));
     
@@ -457,22 +536,37 @@ void sample_draw_ui(void* userdata)
 {
     viewer_state& state = *reinterpret_cast<viewer_state*>(userdata);
     
+    const float MoveSpeed = glm::pow(2.0f, -state.UI.Zoom) * 0.25f;
+    
+#define FloatButtons(Name, Var, Amount)\
+    ImGui::PushID(Name);\
+    ImGui::InputFloat(Name, &Var, 0.0f, 0.0f, "%.3f", ImGuiInputTextFlags_EnterReturnsTrue);\
+    ImGui::SameLine();\
+    if (ImGui::Button("-")) { Var -= Amount; }\
+    ImGui::SameLine();\
+    if (ImGui::Button("+")) { Var += Amount; }\
+    ImGui::PopID();
+    
     ImGui::Begin("TileDB", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse);
-      ImGui::SliderInt("NumGrids", &state.UI.NumGrids, 1, MAX_NUM_GRIDS);
-      ImGui::SliderFloat("X", &state.UI.X, -1, 40);
-      ImGui::SliderFloat("Y", &state.UI.Y, -1, 40);
-      ImGui::SliderFloat("Zoom", &state.UI.Zoom, -10, 1);
-      ImGui::SliderInt("Min", &state.UI.ViewRange.x, 0, 10000 - 1);
-      ImGui::SliderInt("Max", &state.UI.ViewRange.y, 0, 10000);
-      ImGui::SliderFloat("Gamma", &state.UI.Gamma, 0.1f, 10.f);
-    ImGui::Checkbox("Show Grid", &state.UI.ShowGrids);
-    ImGui::Checkbox("Freeze Grid Levels", &state.UI.FreezeGridLevels);
-      ImGui::Checkbox("Freeze Grid", &state.UI.FreezeGridLocations);
+        
+        ImGui::SliderInt("NumGrids", &state.UI.NumGrids, 1, MAX_NUM_GRIDS);
+        FloatButtons("X", state.UI.X, MoveSpeed);
+        FloatButtons("Y", state.UI.Y, MoveSpeed);
+        FloatButtons("Zoom", state.UI.Zoom, 0.1f);
+    
+        ImGui::SliderInt("Min", &state.UI.ViewRange.x, 0, 10000 - 1);
+        ImGui::SliderInt("Max", &state.UI.ViewRange.y, 0, 10000);
+        ImGui::SliderFloat("Gamma", &state.UI.Gamma, 0.1f, 10.f);
+        ImGui::Checkbox("Show Grid", &state.UI.ShowGrids);
+        ImGui::Checkbox("Freeze Grid Levels", &state.UI.FreezeGridLevels);
+        ImGui::Checkbox("Freeze Grid", &state.UI.FreezeGridLocations);
     ImGui::End();
 }
 
 void sample_shutdown(void* userdata) {
   auto data = static_cast<viewer_state*>(userdata);
+    data->CloseClientThread = true;
+    data->ClientThread.join();
   delete data;
   printf("shutting down\n");
 }

@@ -157,3 +157,44 @@ class image_uploader {
   size_t   size_per_frame_         = 0;
   uint32_t nframes_                = 0;
 };
+
+
+// Returns a vector that includes all elements that are both in LHS and RHS
+// Assumes no duplicates
+template<typename T>
+std::vector<T> Intersection(std::vector<T> LHS, const std::vector<T>& RHS) {
+    for (size_t i = 0; i < LHS.size(); ++i) {
+        bool Found = false;
+        for (T const& RHSElement : RHS) {
+            if (RHSElement == LHS[i]) {
+                Found = true;
+                break;
+            }
+        }
+        if (!Found) {
+            LHS.erase(LHS.begin() + static_cast<int64_t>(i));
+            --i;
+        }
+    }
+    return LHS;
+}
+
+// For each element in RHS, remove it from LHS if it is present and return
+template<typename T>
+std::vector<T> Difference(std::vector<T> LHS, const std::vector<T>& RHS) {
+    for (size_t i = 0; i < LHS.size(); ++i) {
+        bool Found = false;
+        for (T const& RHSElement : RHS) {
+            if (RHSElement == LHS[i]) {
+                Found = true;
+                break;
+            }
+        }
+        if (Found) {
+            LHS.erase(LHS.begin() + static_cast<int64_t>(i));
+            --i;
+        }
+    }
+    return LHS;
+}
+
