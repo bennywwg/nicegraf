@@ -255,7 +255,7 @@ struct viewer_state {
     
     void SetRequestedCoords(const std::vector<glm::ivec3>& Requests) {
         std::lock_guard<std::mutex> RequestLock(RequestMut);
-        RequestedCoords = Requests;
+        RequestedCoords = Intersection(Requests, AllClientTiles);
     }
     
     std::optional<std::pair<EncodedImage, glm::ivec3>> PopResultImage() {
@@ -358,7 +358,7 @@ void* sample_initialize(
     
     auto AllTilesetsResponse = state->client->RequestSynchronous(AutoReflect::CommandGetAllTilesets());
     if (!AllTilesetsResponse.Tilesets.empty()) {
-        gpuState.Initialize(xfer_encoder, AllTilesetsResponse.Tilesets[0].Format.Format, glm::uvec2(3, 2), 4);
+        gpuState.Initialize(xfer_encoder, AllTilesetsResponse.Tilesets[0].Format.Format, glm::uvec2(5, 4), 4);
     } else {
         return reinterpret_cast<void*>(state);
     }
@@ -444,6 +444,7 @@ void sample_pre_draw_frame(ngf_cmd_buffer cmd_buffer, main_render_pass_sync_info
 #else
     {
         std::vector<glm::ivec3> AllInGridNotLoaded = Difference(AllInGrid, gpuData.GPUPopulatedTiles);
+        std::reverse(AllInGridNotLoaded.begin(), AllInGridNotLoaded.end());
         
         state->SetRequestedCoords(AllInGridNotLoaded);
         
