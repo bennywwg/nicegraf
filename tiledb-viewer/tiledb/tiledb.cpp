@@ -444,7 +444,27 @@ void sample_pre_draw_frame(ngf_cmd_buffer cmd_buffer, main_render_pass_sync_info
 #else
     {
         std::vector<glm::ivec3> AllInGridNotLoaded = Difference(AllInGrid, gpuData.GPUPopulatedTiles);
-        std::reverse(AllInGridNotLoaded.begin(), AllInGridNotLoaded.end());
+
+        // Sort by distance to center, but always prioritize higher levels
+        {
+            glm::vec2 ViewCenter = glm::vec2(state->UI.X, state->UI.Y);
+            std::sort(AllInGridNotLoaded.begin(), AllInGridNotLoaded.end(), [&ViewCenter](glm::ivec3 const& A, glm::ivec3 const& B) {
+                int32_t ASizeMultiplier = 1 << A.z;
+                int32_t BSizeMultiplier = 1 << B.z;
+
+                glm::vec2 ALocation = (glm::vec2(A) + glm::vec2(0.5f)) * glm::vec2(ASizeMultiplier);
+                glm::vec2 BLocation = (glm::vec2(B) + glm::vec2(0.5f)) * glm::vec2(BSizeMultiplier);
+
+                float ADistance = glm::length(ViewCenter - ALocation);
+                float BDistance = glm::length(ViewCenter - BLocation);
+
+                if (A.z != B.z) {
+                    return A.z > B.z;
+                } else {
+                    return ADistance < BDistance;
+                }
+            });
+        }
         
         state->SetRequestedCoords(AllInGridNotLoaded);
         
